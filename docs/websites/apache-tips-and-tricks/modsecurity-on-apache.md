@@ -19,135 +19,75 @@ external_resources:
 
 ModSecurity is a web application firewall for the Apache web server. In addition to providing logging capabilities, ModSecurity can monitor the HTTP traffic in real time in order to detect attacks. ModSecurity also operates as a web intrusion detection tool, allowing you to react to suspicious events that take place at your web systems.
 
-## Installing ModSecurity
+
+## Installing ModSecurity On Ubuntu (16.10)
 
 Before you install ModSecurity, you'll want to have a LAMP stack set up on your Linode. For instructions, see the [LAMP Guides](/docs/websites/lamp/).
 
-### Ubuntu / Debian
-
-To install ModSecurity on a Linode running Ubuntu or Debian, enter the following commands, one by one:
-
-    sudo apt-get install libxml2 libxml2-dev libxml2-utils
-    sudo apt-get install libaprutil1 libaprutil1-dev
-    sudo apt-get install libapache-mod-security
+To install ModSecurity on a Linode running Ubuntu 16.10, enter the following command:
+    >   sudo apt-get install libxml2 libxml2-dev libxml2-utils libaprutil1 libaprutil1-dev libapache2-mod-security2
 
 ModSecurity is now installed on your Linode.
 
-### CentOS / Fedora
-
-To install ModSecurity on a Linode running CentOS or Fedora, perform the following steps:
-
-1.  Install the GCC compiler and the dependencies by entering the following commands, one by one:
-
-        sudo yum install mod_security
-
-2.  Restart Apache by entering the following command:
-
-        sudo /etc/init.d/httpd restart
-
-ModSecurity is now installed on your Linode.
-
-## OWASP ModSecurity Core Rule Set
-
-For a base configuration, we are going to use the OWASP core rule set. Installation instructions are in the SpiderLabs GitHub project here:
-
--   <https://github.com/SpiderLabs/owasp-modsecurity-crs/blob/master/INSTALL>
 
 ## Configuring ModSecurity
 
-You'll want to use the `modsecurity_10_crs_config`, so let's copy that from the example:
+Download the recommended ModSecurity Configuration
+-   <https://github.com/SpiderLabs/ModSecurity/blob/master/modsecurity.conf-recommended>
 
-    cp modsecurity_crs_10_setup.conf.example modsecurity_crs_10_setup.conf
+Rename and move the recommended configuration file keeping the Ubuntu default version for reference if you'd like 
+    >   sudo mv /etc/modsecurity/modsecurity.conf /etc/modsecurity/modsecurity.conf.orig
+    >   sudo mv modsecurity.conf-recommended /etc/modsecurity/modsecurity.conf
+    
+    
+## Installing The OWASP ModSecurity Core Rule Set
 
-There are five rules directories:
+For a base configuration, we are going to use the OWASP core rule set. 
+-   <https://github.com/SpiderLabs/owasp-modsecurity-crs/blob/v3.0/master/INSTALL>
 
-- activated\_rules
-- base\_rules
-- experimental\_rules
-- optional\_rules
-- slr\_rules
+    >   sudo apt-get install git
+    >   sudo mkdir /etc/apache2/modsecurity.d
+    >   cd /etc/apache2/modsecurity.d
+    >   sudo git clone https://github.com/SpiderLabs/owasp-modsecurity-crs
+    >   cd owasp-modsecurity-crs
+    >   sudo mv crs-setup.conf.example crs-setup.conf
+    >   sudo mv rules/REQUEST-900-EXCLUSION-RULES-BEFORE-CRS.conf.example rules/REQUEST-900-EXCLUSION-RULES-BEFORE-CRS.conf
+    >   sudo mv rules/RESPONSE-999-EXCLUSION-RULES-AFTER-CRS.conf.example rules/RESPONSE-999-EXCLUSION-RULES-AFTER-CRS.conf
 
- {: .note }
->
-> The activated\_rules directory will be empty in case you wanted to symlink the configuration files for the rules you wish to use into that directory.
+Now enable the rules in the apache security2 module configuration file
+    >   sudo nano /etc/apache2/mods-available/security2.conf
+    
+Add these two lines inside the <IfModule security2_module> blocks
+    >   IncludeOptional /etc/apache2/modsecurity.d/owasp-modsecurity-crs/crs-setup.conf
+    >   IncludeOptional /etc/apache2/modsecurity.d/owasp-modsecurity-crs/rules/*.conf
 
-There are two ways to configure ModSecurity: use a basic ruleset, or use symbolic links. The following sections explain how to use both methods.
+Restart apache
+    >   sudo service apache2 restart
+    
+    
+## Test That The Module Is Working
 
-### Using a Basic Ruleset
+Visit http://localhost/?param="><script>alert(1);</script> or http://yourdomain/?param="><script>alert(1);</script> 
 
-If you want to get started with a basic ruleset and would rather not bother with symbolically linking configuration files, perform the following steps:
+If everything is working you should have a notice in your apache error log. If you have changed the module's behavior to On you should get a 403 Forbidden response and an error log entry.
 
-1.  Modify your httpd.conf file as shown below:
 
-    > {: .file }
-/etc/apache2/httpd.conf (Debian / Ubuntu)
-    >
-    > > \<IfModule security2\_module\>
-    > > :   Include modsecurity-crs/*.conf Include modsecurity-crs/base\_rules/*.conf
-    > >
-    > > \</IfModule\>
-    >
-    > {: .file }
-/etc/httpd/conf/httpd.conf (CentOS / Fedora)
-    >
-    > > \<IfModule security2\_module\>
-    > > :   Include modsecurity-crs/*.conf Include modsecurity-crs/base\_rules/*.conf
-    > >
-    > > \</IfModule\>
+## Changing The Detection Behavior
 
-2.  In the *modsecurity\_crs\_20\_protocol\_violations.conf* file, rename the `REQBODY_ERROR` variable to `REQBODY_PROCESSOR_ERROR`.
-3.  Restart Apache for the updates to take effect:
+Once you've verified everything is working correctly you may want to change the module's behavior from DetectionOnly to On.
+    >   sudo nano /etc/modsecurity/modsecurity.conf
+Change "SecRuleEngine DetectionOnly" to "SecRuleEngine On" then restart apache
+    >   sudo service apache2 restart
+    
+## Keeping Up To Date
 
-    > Debian / Ubuntu:
-    >
-    >     /etc/init.d/apache2 restart
-    >
-    > CentOS / Fedora:
-    >
-    >     /etc/init.d/httpd restart
+To keep the rules up to date you may use cron and a tool included with the rules you downloaded earlier
+0 2 * * *  util/upgrade.py --geoip --cron
 
-You have successfully configured ModSecurity.
-
-### Using Symbolic Links
-
-If you would rather symbolically link those configuration files to the activated\_rules directory, perform the following steps:
-
-1.  Edit the Apache configuration file so `IfModule` looks like this:
-
-    > {: .file }
-/etc/apache2/httpd.conf (Debian / Ubuntu)
-    >
-    > > \<IfModule security2\_module\>
-    > > :   Include modsecurity-crs/modsecurity\_crs\_10\_config.conf
-    > >     Include modsecurity-crs/activated\_rules/\*.conf
-    > > \</IfModule\>
-    >
-    > {: .file }
-/etc/httpd/conf/httpd.conf (CentOS / Fedora)
-    >
-    > > \<IfModule security2\_module\>
-    > > :   Include modsecurity-crs/modsecurity\_crs\_10\_config.conf
-    > >     Include modsecurity-crs/activated\_rules/\*.conf
-    > > \</IfModule\>
-
-2.  Create the symbolic links before restarting Apache. A few examples are shown below.
-
-    - To copy all the base\_rules over to activated\_rules:
-    >
-    >         for f in `ls base_rules/` ; do ln -s /usr/local/apache/conf/crs/base_rules/$f activated_rules/$f ; done
-    >
-    - To copy the comment spam rules from the optional\_rules directory to the activated\_rules directory:
-    >
-    >         for f in `ls optional_rules/ | grep comment_spam` ; do sudo ln -s /usr/local/apache/conf/crs/optional_rules/$f activated_rules/$f ; done
-    >
-3.  Restart Apache for the updates to take effect:
-
-    > Debian / Ubuntu:
-    >
-    >     /etc/init.d/apache2 restart
-    >
-    > CentOS / Fedora:
-    >
-    >     /etc/init.d/httpd restart
 
 You have successfully configured ModSecurity.
+
+
+*There is additional information included in the core rules set linked above as well as the well commented configuration files themselves. Read over everything as suggested in those documents to ensure the module is configured to work with you particular environment.
+
+Parts of this guide were taken directly from the core rule set installation instructions linked above and the previous version of this file. I claim no ownership to any of the content provided here. I've just condensed all of the information into a single accurate linear guide to get started with ModSecurity using the latest version of Ubuntu, ModSecurity, and the OWASP Core Rule Set.
